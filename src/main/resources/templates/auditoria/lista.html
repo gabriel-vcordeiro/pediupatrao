@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <title>Auditoria do Sistema</title>
+</head>
+<body>
+
+<div th:fragment="content">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-shield-check me-2 text-primary"></i>Registro de Auditoria
+            </h2>
+            <p class="text-muted small mb-0">Rastreabilidade persistente de pedidos, clientes e usuários conforme requisitos de conformidade</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a th:href="@{/auditoria}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-clockwise me-1"></i>Atualizar
+            </a>
+        </div>
+    </div>
+
+    <!-- Barra de filtros -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="fw-medium text-muted me-2"><i class="bi bi-funnel me-1"></i>Filtrar por Entidade:</span>
+                <a th:href="@{/auditoria}" class="btn btn-sm"
+                   th:classappend="${filtroEntidade == null or filtroEntidade == ''} ? 'btn-primary' : 'btn-outline-secondary'">Todos</a>
+                <a th:href="@{/auditoria(entidade='PEDIDO')}" class="btn btn-sm"
+                   th:classappend="${filtroEntidade == 'PEDIDO'} ? 'btn-primary' : 'btn-outline-secondary'">Pedidos</a>
+                <a th:href="@{/auditoria(entidade='CLIENTE')}" class="btn btn-sm"
+                   th:classappend="${filtroEntidade == 'CLIENTE'} ? 'btn-primary' : 'btn-outline-secondary'">Clientes</a>
+                <a th:href="@{/auditoria(entidade='USUARIO')}" class="btn btn-sm"
+                   th:classappend="${filtroEntidade == 'USUARIO'} ? 'btn-primary' : 'btn-outline-secondary'">Usuários</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Auditoria -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="ps-3" style="width: 170px;">Data e Hora</th>
+                            <th>Usuário</th>
+                            <th>Perfil</th>
+                            <th>Operação</th>
+                            <th>Entidade (ID)</th>
+                            <th>Campo Alterado</th>
+                            <th>Valor Anterior</th>
+                            <th>Novo Valor</th>
+                            <th class="pe-3">Justificativa / Detalhes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Vazio -->
+                        <tr th:if="${#lists.isEmpty(auditorias)}">
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="bi bi-shield-x fs-2 d-block mb-2"></i>
+                                Nenhum registro de auditoria encontrado.
+                            </td>
+                        </tr>
+                        <!-- Registros -->
+                        <tr th:each="audit : ${auditorias}">
+                            <td class="ps-3 text-nowrap small text-muted">
+                                <i class="bi bi-clock me-1"></i><span th:text="${audit.dataHoraFormatada}"></span>
+                            </td>
+                            <td>
+                                <strong th:text="${audit.usuario}"></strong>
+                            </td>
+                            <td>
+                                <span class="badge"
+                                      th:classappend="${audit.perfil == 'ADMIN'} ? 'bg-danger' :
+                                                      (${audit.perfil == 'GERENTE'} ? 'bg-primary' : 'bg-secondary')"
+                                      th:text="${audit.perfil}">
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge"
+                                      th:classappend="${#strings.contains(audit.operacao, 'CANCELAMENTO')} ? 'bg-danger' :
+                                                      (${#strings.contains(audit.operacao, 'DESCONTO')} ? 'bg-success' :
+                                                      (${#strings.contains(audit.operacao, 'STATUS')} ? 'bg-warning text-dark' : 'bg-info text-dark'))"
+                                      th:text="${audit.operacao}">
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark border" th:text="${audit.entidade}"></span>
+                                <small class="text-muted d-block text-truncate" style="max-width: 120px;" th:text="${audit.entidadeId}"></small>
+                            </td>
+                            <td>
+                                <code th:text="${audit.campoAlterado != null ? audit.campoAlterado : '—'}"></code>
+                            </td>
+                            <td>
+                                <span class="text-danger small" th:text="${audit.valorAnterior != null ? audit.valorAnterior : '—'}"></span>
+                            </td>
+                            <td>
+                                <span class="text-success small fw-medium" th:text="${audit.novoValor != null ? audit.novoValor : '—'}"></span>
+                            </td>
+                            <td class="pe-3 small text-muted">
+                                <span th:text="${audit.justificativa != null ? audit.justificativa : '—'}"></span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer text-muted small" th:if="${!#lists.isEmpty(auditorias)}">
+            Total de eventos auditados: <strong th:text="${#lists.size(auditorias)}"></strong>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
