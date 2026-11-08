@@ -46,11 +46,12 @@ public class HomeController {
         return "login";
     }
 
-    @GetMapping("/")
+    @GetMapping({"/", "/dashboard"})
     public String home(Model model, @RequestParam(required = false) Boolean erroAcesso) {
         if (Boolean.TRUE.equals(erroAcesso)) {
             model.addAttribute("erro", "Acesso negado: seu perfil não possui autorização para a ação solicitada.");
         }
+        model.addAttribute("produtos", produtoService.listarProdutos());
         model.addAttribute("content", "home :: content");
         return "layout";
     }

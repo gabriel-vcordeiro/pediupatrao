@@ -1,15 +1,814 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head>
-    <title>Home</title>
+    <title>Dashboard Administrativo — Pediu Patrão</title>
 </head>
 <body>
 
-<div class="container-fluid vh-100 d-flex justify-content-center align-items-center" th:fragment="content">
-    <div class="text-center">
-        <h1>Bem-vindo!!!</h1>
-        <img th:src="@{/images/logo.png}" alt="Logo" width="500" height="500">
+<div th:fragment="content" class="pb-5">
+
+    <!-- Alerta de acesso negado (se redirecionado pelo SecurityConfig) -->
+    <div class="alert alert-danger alert-dismissible fade show" th:if="${erro}" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span th:text="${erro}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+
+    <!-- =========================================================================
+         CABEÇALHO E CONTROLES DE ATUALIZAÇÃO (RF06 & RF07)
+         ========================================================================= -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard Administrativo
+            </h2>
+            <p class="text-muted small mb-0">
+                Monitoramento em tempo real de vendas, situação operacional dos pedidos e tendências do estabelecimento
+            </p>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge bg-light text-secondary border px-3 py-2" id="badgeUltimaAtualizacao">
+                <i class="bi bi-clock-history me-1"></i>
+                Última atualização: <strong id="lblUltimaAtualizacao">Carregando...</strong>
+            </span>
+
+            <div class="input-group input-group-sm" style="width: auto;">
+                <span class="input-group-text bg-white text-muted"><i class="bi bi-arrow-repeat me-1"></i>Auto</span>
+                <select id="selectAutoRefresh" class="form-select form-select-sm" onchange="alterarAutoRefresh(this.value)">
+                    <option value="0">Manual</option>
+                    <option value="15000">15s</option>
+                    <option value="30000" selected>30s</option>
+                    <option value="60000">60s</option>
+                </select>
+            </div>
+
+            <button type="button" id="btnAtualizarDashboard" class="btn btn-primary btn-sm px-3" onclick="carregarDadosDashboard()">
+                <span id="spinnerAtualizar" class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
+                <i id="iconeAtualizar" class="bi bi-arrow-clockwise me-1"></i>Atualizar Dados
+            </button>
+        </div>
+    </div>
+
+    <!-- Alerta de erro de comunicação/validação da API (RF07) -->
+    <div id="alertaErroApi" class="alert alert-warning d-none d-flex align-items-center justify-content-between" role="alert">
+        <div>
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            <span id="msgErroApi">Não foi possível carregar os dados da API.</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-dark" onclick="carregarDadosDashboard()">Tentar novamente</button>
+    </div>
+
+    <!-- =========================================================================
+         RF05 — FILTROS DE CONSULTA
+         ========================================================================= -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body py-3">
+            <form id="formFiltrosDashboard" onsubmit="aplicarFiltros(event)">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-auto mb-1 mb-md-0">
+                        <label class="form-label small fw-semibold text-muted mb-1 d-block">
+                            <i class="bi bi-calendar-range me-1"></i>Período Rápido
+                        </label>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary active" id="btnPeriodoTodos" onclick="selecionarPeriodoRapido('TODOS')">Tudo</button>
+                            <button type="button" class="btn btn-outline-secondary" id="btnPeriodoHoje" onclick="selecionarPeriodoRapido('HOJE')">Hoje</button>
+                            <button type="button" class="btn btn-outline-secondary" id="btnPeriodo7d" onclick="selecionarPeriodoRapido('7D')">7 Dias</button>
+                            <button type="button" class="btn btn-outline-secondary" id="btnPeriodo30d" onclick="selecionarPeriodoRapido('30D')">30 Dias</button>
+                        </div>
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label for="filtroDataInicio" class="form-label small fw-semibold text-muted mb-1">Data Inicial</label>
+                        <input type="date" id="filtroDataInicio" class="form-control form-control-sm">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label for="filtroDataFim" class="form-label small fw-semibold text-muted mb-1">Data Final</label>
+                        <input type="date" id="filtroDataFim" class="form-control form-control-sm">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label for="filtroStatus" class="form-label small fw-semibold text-muted mb-1">Situação do Pedido</label>
+                        <select id="filtroStatus" class="form-select form-select-sm">
+                            <option value="TODOS">Todos os Status</option>
+                            <option value="RECEBIDO">Recebido</option>
+                            <option value="EM_PREPARACAO">Em Preparação</option>
+                            <option value="PRONTO">Pronto</option>
+                            <option value="SAIU_PARA_ENTREGA">Saiu para Entrega</option>
+                            <option value="RETIRADO">Retirado</option>
+                            <option value="FINALIZADO">Finalizado</option>
+                            <option value="CANCELADO">Cancelado</option>
+                        </select>
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label for="filtroCategoria" class="form-label small fw-semibold text-muted mb-1">Categoria</label>
+                        <select id="filtroCategoria" class="form-select form-select-sm">
+                            <option value="TODAS">Todas as Categorias</option>
+                            <option value="Pizza">Pizza</option>
+                            <option value="Bebida">Bebida</option>
+                            <option value="Esfiha">Esfiha</option>
+                            <option value="Lanche">Lanche</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-md-2">
+                        <label for="filtroProdutoId" class="form-label small fw-semibold text-muted mb-1">Produto</label>
+                        <select id="filtroProdutoId" class="form-select form-select-sm">
+                            <option value="TODOS">Todos os Produtos</option>
+                            <option th:each="p : ${produtos}" th:value="${p.id}" th:text="${p.nome}"></option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-md-auto ms-md-auto d-flex gap-2 mt-2 mt-md-0">
+                        <button type="submit" class="btn btn-primary btn-sm px-3">
+                            <i class="bi bi-funnel-fill me-1"></i>Filtrar
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm px-3" onclick="limparFiltros()">
+                            <i class="bi bi-x-lg me-1"></i>Limpar
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         RF01 — INDICADORES GERAIS DE VENDAS (KPIs)
+         ========================================================================= -->
+    <div class="row g-3 mb-4">
+        <!-- KPI 1: Faturamento Líquido -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 border-start border-4 border-success h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Faturamento Líquido</span>
+                            <h3 class="fw-bold text-success mt-1 mb-1" id="kpiFaturamentoTotal">R$ 0,00</h3>
+                        </div>
+                        <div class="bg-success bg-opacity-10 text-success rounded p-2">
+                            <i class="bi bi-currency-dollar fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        Bruto: <strong id="kpiFaturamentoBruto">R$ 0,00</strong>
+                        <span class="mx-1">|</span>
+                        Desc.: <span class="text-danger" id="kpiTotalDescontos">-R$ 0,00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 2: Total de Pedidos -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 border-start border-4 border-primary h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Total de Pedidos</span>
+                            <h3 class="fw-bold text-primary mt-1 mb-1" id="kpiTotalPedidos">0</h3>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 text-primary rounded p-2">
+                            <i class="bi bi-receipt-cutoff fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        Válidos: <strong class="text-dark" id="kpiPedidosValidos">0</strong>
+                        <span class="mx-1">|</span>
+                        Cancelados: <span class="text-danger" id="kpiPedidosCancelados">0 (0%)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 3: Ticket Médio -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 border-start border-4 border-info h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Ticket Médio</span>
+                            <h3 class="fw-bold text-info mt-1 mb-1" id="kpiTicketMedio">R$ 0,00</h3>
+                        </div>
+                        <div class="bg-info bg-opacity-10 text-info rounded p-2">
+                            <i class="bi bi-graph-up-arrow fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        Valor médio por pedido válido
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 4: Volume de Itens e Operação -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 border-start border-4 border-warning h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Itens Vendidos</span>
+                            <h3 class="fw-bold text-dark mt-1 mb-1" id="kpiTotalItensVendidos">0</h3>
+                        </div>
+                        <div class="bg-warning bg-opacity-10 text-warning rounded p-2">
+                            <i class="bi bi-box-seam fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        Em andamento: <strong class="text-warning" id="kpiPedidosEmAndamento">0</strong>
+                        <span class="mx-1">|</span>
+                        Concluídos: <strong class="text-success" id="kpiPedidosFinalizados">0</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         RF02 — ANÁLISE DE VENDAS (GRÁFICOS)
+         ========================================================================= -->
+    <div class="row g-3 mb-4">
+        <!-- Gráfico 1: Evolução de Vendas por Período -->
+        <div class="col-12 col-lg-8">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="fw-bold mb-0"><i class="bi bi-bar-chart-line me-2 text-primary"></i>Evolução de Vendas por Período</h6>
+                        <small class="text-muted">Faturamento líquido (R$) e volume de pedidos válidos por dia</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div style="position: relative; height: 280px;">
+                        <canvas id="chartVendasPeriodo"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfico 2: Distribuição por Situação dos Pedidos -->
+        <div class="col-12 col-lg-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-pie-chart me-2 text-primary"></i>Pedidos por Situação</h6>
+                    <small class="text-muted">Proporção de pedidos em cada etapa do fluxo</small>
+                </div>
+                <div class="card-body d-flex flex-column justify-content-center">
+                    <div style="position: relative; height: 260px;">
+                        <canvas id="chartSituacaoPedidos"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         RF03 — SITUAÇÃO DOS PEDIDOS & RF04 — PRODUTOS MAIS VENDIDOS
+         ========================================================================= -->
+    <div class="row g-3 mb-4">
+        <!-- RF03: Detalhamento da Situação dos Pedidos -->
+        <div class="col-12 col-lg-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="fw-bold mb-0"><i class="bi bi-kanban me-2 text-primary"></i>Situação dos Pedidos (Ciclo de Vida)</h6>
+                        <small class="text-muted">Quantidade, participação e valor movimentado por status</small>
+                    </div>
+                    <a th:href="@{/pedidos}" class="btn btn-outline-primary btn-sm">Gerenciar</a>
+                </div>
+                <div class="card-body pt-2">
+                    <div id="containerSituacaoPedidos" class="d-flex flex-column gap-2">
+                        <!-- Preenchido dinamicamente via API -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RF04: Ranking de Produtos Mais Vendidos + Gráfico de Categorias -->
+        <div class="col-12 col-lg-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="fw-bold mb-0"><i class="bi bi-trophy me-2 text-warning"></i>Produtos Mais Vendidos</h6>
+                        <small class="text-muted">Ranking por unidades comercializadas e receita gerada</small>
+                    </div>
+                </div>
+                <div class="card-body pt-2">
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Produto</th>
+                                    <th>Categoria</th>
+                                    <th class="text-center">Qtd. Vendida</th>
+                                    <th class="text-end">Faturamento</th>
+                                    <th style="width: 22%;">Participação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaProdutosMaisVendidos">
+                                <!-- Preenchido dinamicamente via API -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Gráfico complementar RF02/RF04: Faturamento por Categoria -->
+                    <div class="border-top pt-3 mt-2">
+                        <small class="fw-semibold text-muted d-block mb-2">
+                            <i class="bi bi-tags me-1"></i>Faturamento por Categoria de Produto
+                        </small>
+                        <div style="position: relative; height: 140px;">
+                            <canvas id="chartVendasCategoria"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         RF03 — MONITORAMENTO DE PEDIDOS FILTRADOS / RECENTES
+         ========================================================================= -->
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="fw-bold mb-0"><i class="bi bi-list-check me-2 text-primary"></i>Pedidos Recentes (Conforme Filtros)</h6>
+                <small class="text-muted">Visão detalhada dos pedidos considerados na análise atual</small>
+            </div>
+            <span class="badge bg-secondary" id="badgeQtdPedidosRecentes">0 exibidos</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="ps-3">Cliente</th>
+                            <th>Itens do Pedido</th>
+                            <th class="text-center">Qtd. Itens</th>
+                            <th>Status</th>
+                            <th>Entrada</th>
+                            <th>Saída</th>
+                            <th class="text-end pe-3">Valor Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaPedidosRecentes">
+                        <!-- Preenchido dinamicamente via API -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script do Chart.js local (já incluso no projeto) -->
+    <script th:src="@{/plugins/chart.js/Chart.min.js}"></script>
+
+    <!-- =========================================================================
+         SCRIPT DE INTEGRAÇÃO COM A API, GRÁFICOS E ATUALIZAÇÃO DE DADOS (RF05, RF06, RF07)
+         ========================================================================= -->
+    <script>
+        let chartPeriodoInstance = null;
+        let chartSituacaoInstance = null;
+        let chartCategoriaInstance = null;
+        let timerAutoRefresh = null;
+
+        const CORES_STATUS = {
+            'RECEBIDO': '#6c757d',
+            'EM_PREPARACAO': '#ffc107',
+            'PRONTO': '#0dcaf0',
+            'SAIU_PARA_ENTREGA': '#0d6efd',
+            'RETIRADO': '#6610f2',
+            'FINALIZADO': '#198754',
+            'CANCELADO': '#dc3545'
+        };
+
+        const BADGES_STATUS = {
+            'RECEBIDO': 'bg-secondary',
+            'EM_PREPARACAO': 'bg-warning text-dark',
+            'PRONTO': 'bg-info text-dark',
+            'SAIU_PARA_ENTREGA': 'bg-primary',
+            'RETIRADO': 'bg-primary',
+            'FINALIZADO': 'bg-success',
+            'CANCELADO': 'bg-danger'
+        };
+
+        function formatarMoeda(valor) {
+            const num = Number(valor) || 0;
+            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function formatarDataIso(dateObj) {
+            const ano = dateObj.getFullYear();
+            const mes = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const dia = String(dateObj.getDate()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}`;
+        }
+
+        function selecionarPeriodoRapido(tipo) {
+            document.querySelectorAll('#btnPeriodoTodos, #btnPeriodoHoje, #btnPeriodo7d, #btnPeriodo30d')
+                .forEach(btn => btn.classList.remove('active'));
+
+            const inputInicio = document.getElementById('filtroDataInicio');
+            const inputFim = document.getElementById('filtroDataFim');
+            const hoje = new Date();
+
+            if (tipo === 'TODOS') {
+                document.getElementById('btnPeriodoTodos').classList.add('active');
+                inputInicio.value = '';
+                inputFim.value = '';
+            } else if (tipo === 'HOJE') {
+                document.getElementById('btnPeriodoHoje').classList.add('active');
+                const strHoje = formatarDataIso(hoje);
+                inputInicio.value = strHoje;
+                inputFim.value = strHoje;
+            } else if (tipo === '7D') {
+                document.getElementById('btnPeriodo7d').classList.add('active');
+                const inicio = new Date();
+                inicio.setDate(hoje.getDate() - 6);
+                inputInicio.value = formatarDataIso(inicio);
+                inputFim.value = formatarDataIso(hoje);
+            } else if (tipo === '30D') {
+                document.getElementById('btnPeriodo30d').classList.add('active');
+                const inicio = new Date();
+                inicio.setDate(hoje.getDate() - 29);
+                inputInicio.value = formatarDataIso(inicio);
+                inputFim.value = formatarDataIso(hoje);
+            }
+
+            carregarDadosDashboard();
+        }
+
+        function aplicarFiltros(event) {
+            if (event) event.preventDefault();
+            carregarDadosDashboard();
+        }
+
+        function limparFiltros() {
+            document.getElementById('filtroDataInicio').value = '';
+            document.getElementById('filtroDataFim').value = '';
+            document.getElementById('filtroStatus').value = 'TODOS';
+            document.getElementById('filtroCategoria').value = 'TODAS';
+            document.getElementById('filtroProdutoId').value = 'TODOS';
+            selecionarPeriodoRapido('TODOS');
+        }
+
+        function filtrarPorStatusCard(statusCodigo) {
+            const selectStatus = document.getElementById('filtroStatus');
+            if (selectStatus.value === statusCodigo) {
+                selectStatus.value = 'TODOS';
+            } else {
+                selectStatus.value = statusCodigo;
+            }
+            carregarDadosDashboard();
+        }
+
+        function construirQueryStringFiltros() {
+            const params = new URLSearchParams();
+            const dataInicio = document.getElementById('filtroDataInicio').value;
+            const dataFim = document.getElementById('filtroDataFim').value;
+            const status = document.getElementById('filtroStatus').value;
+            const categoria = document.getElementById('filtroCategoria').value;
+            const produtoId = document.getElementById('filtroProdutoId').value;
+
+            if (dataInicio) params.append('dataInicio', dataInicio);
+            if (dataFim) params.append('dataFim', dataFim);
+            if (status && status !== 'TODOS') params.append('status', status);
+            if (categoria && categoria !== 'TODAS') params.append('categoria', categoria);
+            if (produtoId && produtoId !== 'TODOS') params.append('produtoId', produtoId);
+
+            const qs = params.toString();
+            return qs ? ('?' + qs) : '';
+        }
+
+        async function carregarDadosDashboard() {
+            const btn = document.getElementById('btnAtualizarDashboard');
+            const spinner = document.getElementById('spinnerAtualizar');
+            const icone = document.getElementById('iconeAtualizar');
+            const alertaErro = document.getElementById('alertaErroApi');
+            const msgErro = document.getElementById('msgErroApi');
+
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            icone.classList.add('d-none');
+            alertaErro.classList.add('d-none');
+
+            try {
+                const url = '/api/dashboard/resumo' + construirQueryStringFiltros();
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.erro || ('Erro HTTP ' + response.status));
+                }
+
+                atualizarIndicadoresUI(payload.indicadores || {});
+                atualizarGraficoPeriodo(payload.vendasPorPeriodo || []);
+                atualizarSituacaoPedidosUI(payload.situacaoPedidos || []);
+                atualizarGraficoSituacao(payload.situacaoPedidos || []);
+                atualizarRankingProdutosUI(payload.produtosMaisVendidos || []);
+                atualizarGraficoCategorias(payload.vendasPorCategoria || []);
+                atualizarTabelaPedidosRecentes(payload.pedidosRecentes || []);
+
+                document.getElementById('lblUltimaAtualizacao').textContent = payload.atualizadoEm || new Date().toLocaleTimeString('pt-BR');
+            } catch (err) {
+                console.error('Erro ao consultar API do Dashboard:', err);
+                msgErro.textContent = err.message || 'Falha ao carregar dados do Dashboard Administrativo.';
+                alertaErro.classList.remove('d-none');
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                icone.classList.remove('d-none');
+            }
+        }
+
+        function atualizarIndicadoresUI(ind) {
+            document.getElementById('kpiFaturamentoTotal').textContent = formatarMoeda(ind.faturamentoTotal);
+            document.getElementById('kpiFaturamentoBruto').textContent = formatarMoeda(ind.faturamentoBruto);
+            document.getElementById('kpiTotalDescontos').textContent = '-' + formatarMoeda(ind.totalDescontos);
+            document.getElementById('kpiTotalPedidos').textContent = ind.totalPedidos ?? 0;
+            document.getElementById('kpiPedidosValidos').textContent = ind.pedidosValidos ?? 0;
+            document.getElementById('kpiPedidosCancelados').textContent = `${ind.pedidosCancelados ?? 0} (${ind.taxaCancelamento ?? 0}%)`;
+            document.getElementById('kpiTicketMedio').textContent = formatarMoeda(ind.ticketMedio);
+            document.getElementById('kpiTotalItensVendidos').textContent = ind.totalItensVendidos ?? 0;
+            document.getElementById('kpiPedidosEmAndamento').textContent = ind.pedidosEmAndamento ?? 0;
+            document.getElementById('kpiPedidosFinalizados').textContent = ind.pedidosFinalizados ?? 0;
+        }
+
+        function atualizarGraficoPeriodo(vendasPorPeriodo) {
+            const ctx = document.getElementById('chartVendasPeriodo').getContext('2d');
+            const labels = vendasPorPeriodo.length > 0 ? vendasPorPeriodo.map(v => v.dataFormatada) : ['Sem vendas no período'];
+            const faturamentos = vendasPorPeriodo.length > 0 ? vendasPorPeriodo.map(v => v.faturamento) : [0];
+            const quantidades = vendasPorPeriodo.length > 0 ? vendasPorPeriodo.map(v => v.quantidadePedidos) : [0];
+
+            if (chartPeriodoInstance) {
+                chartPeriodoInstance.destroy();
+            }
+
+            chartPeriodoInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Faturamento Líquido (R$)',
+                            type: 'bar',
+                            yAxisID: 'y-faturamento',
+                            data: faturamentos,
+                            backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                            borderColor: 'rgba(13, 110, 253, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Qtd. de Pedidos',
+                            type: 'line',
+                            yAxisID: 'y-pedidos',
+                            data: quantidades,
+                            borderColor: '#198754',
+                            backgroundColor: 'rgba(25, 135, 84, 0.15)',
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#198754'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    tooltips: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        yAxes: [
+                            {
+                                id: 'y-faturamento',
+                                type: 'linear',
+                                position: 'left',
+                                ticks: {
+                                    beginAtZero: true,
+                                    callback: function(value) { return 'R$ ' + value; }
+                                }
+                            },
+                            {
+                                id: 'y-pedidos',
+                                type: 'linear',
+                                position: 'right',
+                                gridLines: { drawOnChartArea: false },
+                                ticks: {
+                                    beginAtZero: true,
+                                    stepSize: 1
+                                }
+                            }
+                        ]
+                    }
+                }
+            });
+        }
+
+        function atualizarGraficoSituacao(situacaoPedidos) {
+            const ctx = document.getElementById('chartSituacaoPedidos').getContext('2d');
+            const ativos = situacaoPedidos.filter(s => s.quantidade > 0);
+            const lista = ativos.length > 0 ? ativos : situacaoPedidos;
+
+            const labels = lista.map(s => s.descricao);
+            const valores = lista.map(s => s.quantidade);
+            const cores = lista.map(s => CORES_STATUS[s.status] || '#6c757d');
+
+            if (chartSituacaoInstance) {
+                chartSituacaoInstance.destroy();
+            }
+
+            chartSituacaoInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: valores,
+                        backgroundColor: cores,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, fontSize: 11 }
+                    }
+                }
+            });
+        }
+
+        function atualizarSituacaoPedidosUI(situacaoPedidos) {
+            const container = document.getElementById('containerSituacaoPedidos');
+            const statusSelecionado = document.getElementById('filtroStatus').value;
+
+            if (!situacaoPedidos || situacaoPedidos.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted py-4">Nenhuma informação de situação disponível.</div>';
+                return;
+            }
+
+            container.innerHTML = situacaoPedidos.map(item => {
+                const badgeClass = BADGES_STATUS[item.status] || 'bg-secondary';
+                const corBarra = CORES_STATUS[item.status] || '#6c757d';
+                const ativo = statusSelecionado === item.status ? 'border-primary bg-light' : '';
+
+                return `
+                    <div class="p-2 border rounded ${ativo}" style="cursor: pointer;" onclick="filtrarPorStatusCard('${item.status}')" title="Clique para filtrar por ${item.descricao}">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div>
+                                <span class="badge ${badgeClass} me-1">${item.descricao}</span>
+                                <small class="text-muted">(${item.percentual}%)</small>
+                            </div>
+                            <div class="text-end">
+                                <strong class="me-2">${item.quantidade} ped.</strong>
+                                <span class="small text-muted">${formatarMoeda(item.valorTotal)}</span>
+                            </div>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar" role="progressbar"
+                                 style="width: ${Math.min(100, item.percentual)}%; background-color: ${corBarra};"
+                                 aria-valuenow="${item.percentual}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function atualizarRankingProdutosUI(produtos) {
+            const tbody = document.getElementById('tabelaProdutosMaisVendidos');
+            if (!produtos || produtos.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox d-block fs-4 mb-1"></i>
+                            Nenhuma venda de produto encontrada para os filtros selecionados.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = produtos.map(prod => {
+                const badgePosicao = prod.posicao === 1 ? 'bg-warning text-dark'
+                    : (prod.posicao === 2 ? 'bg-secondary' : (prod.posicao === 3 ? 'bg-info text-dark' : 'bg-light text-dark border'));
+                return `
+                    <tr>
+                        <td><span class="badge ${badgePosicao}">${prod.posicao}º</span></td>
+                        <td class="fw-semibold">${prod.nomeProduto}</td>
+                        <td><span class="badge bg-light text-secondary border">${prod.categoria}</span></td>
+                        <td class="text-center"><span class="fw-bold">${prod.quantidadeVendida}</span> un.</td>
+                        <td class="text-end fw-semibold text-success">${formatarMoeda(prod.faturamentoTotal)}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-grow-1" style="height: 6px;">
+                                    <div class="progress-bar bg-primary" style="width: ${Math.min(100, prod.percentualVendas)}%"></div>
+                                </div>
+                                <small class="text-muted" style="min-width: 38px;">${prod.percentualVendas}%</small>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function atualizarGraficoCategorias(categorias) {
+            const ctx = document.getElementById('chartVendasCategoria').getContext('2d');
+            const labels = categorias.length > 0 ? categorias.map(c => c.categoria) : ['Sem dados'];
+            const valores = categorias.length > 0 ? categorias.map(c => c.faturamentoTotal) : [0];
+
+            if (chartCategoriaInstance) {
+                chartCategoriaInstance.destroy();
+            }
+
+            chartCategoriaInstance = new Chart(ctx, {
+                type: 'horizontalBar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Faturamento (R$)',
+                        data: valores,
+                        backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#0dcaf0', '#6610f2'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    legend: { display: false },
+                    scales: {
+                        xAxes: [{
+                            ticks: {
+                                beginAtZero: true,
+                                callback: function(v) { return 'R$ ' + v; }
+                            }
+                        }]
+                    }
+                }
+            });
+        }
+
+        function atualizarTabelaPedidosRecentes(pedidos) {
+            const tbody = document.getElementById('tabelaPedidosRecentes');
+            const badgeQtd = document.getElementById('badgeQtdPedidosRecentes');
+            badgeQtd.textContent = `${pedidos ? pedidos.length : 0} exibido(s)`;
+
+            if (!pedidos || pedidos.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox d-block fs-4 mb-1"></i>
+                            Nenhum pedido encontrado para os critérios informados.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = pedidos.map(p => {
+                const badgeClass = BADGES_STATUS[p.status] || 'bg-secondary';
+                const descTag = p.valorDesconto > 0
+                    ? `<small class="d-block text-success">Desc: -${formatarMoeda(p.valorDesconto)}</small>`
+                    : '';
+                return `
+                    <tr>
+                        <td class="ps-3 fw-semibold">${p.nomeCliente}</td>
+                        <td><span class="small text-muted">${p.resumoItens}</span></td>
+                        <td class="text-center"><span class="badge bg-light text-dark border">${p.quantidadeItens}</span></td>
+                        <td><span class="badge ${badgeClass}">${p.descricaoStatus}</span></td>
+                        <td class="small text-muted">${p.dataHoraEntrada}</td>
+                        <td class="small text-muted">${p.dataHoraSaida}</td>
+                        <td class="text-end pe-3">
+                            <strong class="text-primary">${formatarMoeda(p.valorTotal)}</strong>
+                            ${descTag}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function alterarAutoRefresh(intervaloMs) {
+            if (timerAutoRefresh) {
+                clearInterval(timerAutoRefresh);
+                timerAutoRefresh = null;
+            }
+            const ms = parseInt(intervaloMs, 10);
+            if (ms > 0) {
+                timerAutoRefresh = setInterval(carregarDadosDashboard, ms);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarDadosDashboard();
+            alterarAutoRefresh(document.getElementById('selectAutoRefresh').value);
+        });
+    </script>
+
 </div>
 
 </body>

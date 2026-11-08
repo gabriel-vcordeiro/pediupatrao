@@ -83,6 +83,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/clientes/**", "/api/clientes/**").hasAnyRole("ATENDENTE", "GERENTE")
                         .requestMatchers(HttpMethod.PUT, "/clientes/**", "/api/clientes/**").hasAnyRole("ATENDENTE", "GERENTE")
 
+                        // Dashboard Administrativo e API do Dashboard
+                        .requestMatchers("/dashboard/**", "/api/dashboard/**").hasAnyRole("ADMIN", "GERENTE", "ATENDENTE")
+
                         // Qualquer outra requisição requer autenticação
                         .anyRequest().authenticated()
                 )

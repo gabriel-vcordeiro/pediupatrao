@@ -10,7 +10,9 @@ body {
     max-width: 250px;
     background-color: #343a40;
     color: white;
-    height: 100vh;
+    min-height: 100vh;
+    position: sticky;
+    top: 0;
 }
 
 #sidebar a {
